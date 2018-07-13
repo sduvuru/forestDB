@@ -242,7 +242,7 @@ struct sb_ops {
                               struct sb_config sconfig,
                               err_log_callback *log_callback);
     bid_t (*alloc_block)(struct filemgr *file);
-    bool (*is_writable)(struct filemgr *file, bid_t bid);
+    bool (*is_writable)(struct filemgr *file, bid_t bid, bool debug);
     uint64_t (*get_bmp_revnum)(struct filemgr *file);
     uint64_t (*get_min_live_revnum)(struct filemgr *file);
     fdb_status (*release)(struct filemgr *file);
@@ -412,7 +412,7 @@ void sb_bmp_mask_init();
  * @param bid ID of block.
  * @return True if the block is writable.
  */
-bool sb_bmp_is_writable(struct filemgr *file, bid_t bid);
+    bool sb_bmp_is_writable(struct filemgr *file, bid_t bid, bool debug);
 
 /**
  * Initialize superblock structure.

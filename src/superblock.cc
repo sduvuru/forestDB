@@ -1000,6 +1000,7 @@ bool sb_switch_reserved_blocks(struct filemgr *file)
     free(sb->rsv_bmp);
     sb->rsv_bmp = NULL;
 
+    fprintf(stderr, "sb_switch_reserved_blocks called for file %s \n", file->filename);
     return true;
 }
 
@@ -1094,7 +1095,31 @@ sb_alloc_start_over:
     return ret;
 }
 
-bool sb_bmp_is_writable(struct filemgr *file, bid_t bid)
+
+void sb_dump(struct filemgr *file, bid_t last_commit, uint64_t lw_bmp_revnum ){
+    struct superblock *sb = file->sb;
+    int unused;
+
+    fprintf(stderr, "sb_dump: last_commit %" _F64 "\n", last_commit);
+    fprintf(stderr, "sb_dump: lw_bmp_revnum %" _F64 "\n", lw_bmp_revnum);
+    fprintf(stderr, "sb_dump: revnum %" _F64 "\n", atomic_get_uint64_t(&sb->revnum));
+    fprintf(stderr, "sb_dump: bmp_revnum %" _F64 "\n", atomic_get_uint64_t(&sb->bmp_revnum));
+    fprintf(stderr, "sb_dump: bmp_size %" _F64 "\n", atomic_get_uint64_t(&sb->bmp_size));
+    fprintf(stderr, "sb_dump: bmp_rcount %" _F64 "\n", atomic_get_uint64_t(&sb->bmp_rcount));
+    fprintf(stderr, "sb_dump: bmp_wcount %" _F64 "\n", atomic_get_uint64_t(&sb->bmp_wcount));
+    fprintf(stderr, "sb_dump: bmp_prev_size %" _F64 "\n", sb->bmp_prev_size);
+    fprintf(stderr, "sb_dump: num_bmp_docs %" _F64 "\n", sb->num_bmp_docs);
+    fprintf(stderr, "sb_dump: num_init_free_blocks %" _F64 "\n", sb->num_init_free_blocks);
+    fprintf(stderr, "sb_dump: num_free_blocks %" _F64 "\n", sb->num_free_blocks);
+    fprintf(stderr, "sb_dump: cur_alloc_bid  %" _F64 "\n", atomic_get_uint64_t(&sb->cur_alloc_bid));
+    fprintf(stderr, "sb_dump: last_hdr_bid  %" _F64 "\n", atomic_get_uint64_t(&sb->last_hdr_bid));
+    fprintf(stderr, "sb_dump: min_live_hdr_revnum  %" _F64 "\n", sb->min_live_hdr_revnum);
+    fprintf(stderr, "sb_dump: min_live_hdr_bid  %" _F64 "\n",sb->min_live_hdr_bid);
+    fprintf(stderr, "sb_dump: last_hdr_revnum  %" _F64 "\n", atomic_get_uint64_t(&sb->last_hdr_revnum));
+    fprintf(stderr, "sb_dump: num_alloc  %" _F64 "\n", sb->num_alloc);
+}
+
+bool sb_bmp_is_writable(struct filemgr *file, bid_t bid, bool debug)
 {
     if (bid < file->sb->config->num_sb) {
         // superblocks are always writable
@@ -1102,6 +1127,7 @@ bool sb_bmp_is_writable(struct filemgr *file, bid_t bid)
     }
 
     bool ret = false;
+    bool dump =  false;
     bid_t last_commit = atomic_get_uint64_t(&file->last_commit) / file->blocksize;
     uint64_t lw_bmp_revnum = atomic_get_uint64_t(&file->last_writable_bmp_revnum);
     struct superblock *sb = file->sb;
@@ -1109,6 +1135,8 @@ bool sb_bmp_is_writable(struct filemgr *file, bid_t bid)
     sb_bmp_barrier_on(sb);
 
     uint8_t *sb_bmp = sb->bmp;
+
+dumpOut:
     if (atomic_get_uint64_t(&sb->bmp_revnum) == lw_bmp_revnum) {
         // Same bitmap revision number: there are 2 possible cases
         //
@@ -1130,14 +1158,34 @@ bool sb_bmp_is_writable(struct filemgr *file, bid_t bid)
         //                             ^               ^         ^
         //                             last_commit     bmp_size  cur_alloc
 
+        if (dump == true){
+            fprintf(stderr, "sb_bmp_is_writable: bit map revision numbers are matching %" _F64 "\n", lw_bmp_revnum);
+        }
+
         if (bid < atomic_get_uint64_t(&sb->bmp_size)) {
+            if (dump == true){
+                fprintf(stderr, "sb_bmp_is_writable: BID in bitmap range bid = %" _F64 " bmp_size = %" _F64 "\n",
+                        bid, atomic_get_uint64_t(&sb->bmp_size));
+            }
             // BID is in the bitmap .. check if bitmap is set.
             if (_is_bmp_set(sb_bmp, bid) &&
                 bid < atomic_get_uint64_t(&sb->cur_alloc_bid) &&
                 bid >= last_commit) {
                 ret = true;
+            } else {
+                if (dump == true){
+                    if (_is_bmp_set(sb_bmp, bid) == false)
+                        fprintf(stderr, "sb_bmp_is_writable: BID is not set in bitmap range bid = %" _F64 " bmp_size = %" _F64 "\n",
+                                bid, atomic_get_uint64_t(&sb->bmp_size));
+                    fprintf(stderr, "sb_bmp_is_writable: BID is not in valid range bid = %" _F64 " cur_alloc_bid = %" _F64 " last_commit = %" _F64 "\n",
+                            bid, atomic_get_uint64_t(&sb->cur_alloc_bid), last_commit);
+                }
             }
         } else {
+            if (dump == true){
+                fprintf(stderr, "sb_bmp_is_writable: BID is not in bitmap range bid = %" _F64 " last_commit = %" _F64 "\n",
+                        bid, last_commit);
+            }
             // BID is out-of-range of the bitmap
             if (bid >= last_commit) {
                 ret = true;
@@ -1167,6 +1215,13 @@ bool sb_bmp_is_writable(struct filemgr *file, bid_t bid)
         // the block is writable if
         // 1) BID >= last_commit OR
         // 2) BID < cur_alloc_bid AND corresponding bitmap is set.
+
+        if (dump == true){
+            fprintf(stderr, "sb_bmp_is_writable: bitmap revision numbers do not match  %" _F64 " %" _F64
+                    " bid =  %" _F64 " last_commit =  %" _F64 "\n",
+                    atomic_get_uint64_t(&sb->bmp_revnum), lw_bmp_revnum, bid, last_commit);
+
+        }
         if (bid >= last_commit) {
             // if prev_bmp exists, last commit position is still located on the
             // previous bitmap (since prev_bmp is released when a commit is invoked
@@ -1196,12 +1251,22 @@ bool sb_bmp_is_writable(struct filemgr *file, bid_t bid)
                     // always writable
                     ret = true;
                 }
+                if (dump == true){
+                    fprintf(stderr, "sb_bmp_is_writable: bmp_prev is set. bid = %" _F64
+                            " bmp_prev_size = %" _F64 " bmp_size = %" _F64 "\n",
+                            bid, sb->bmp_prev_size, atomic_get_uint64_t(&sb->bmp_size));
+                }
             } else {
                 // bmp_prev doesn't exist even though bmp_revnum is different
                 // this happens on the first block reclaim only
                 // so all blocks whose 'BID >= last_commit' are writable.
                 ret = true;
             }
+        }
+
+        if (dump == true){
+            fprintf(stderr, "sb_bmp_is_writable: bid = %" _F64 " bmp_size = %" _F64 " cur_alloc_bid = %" _F64 "\n",
+                    bid, atomic_get_uint64_t(&sb->bmp_size), atomic_get_uint64_t(&sb->cur_alloc_bid) );
         }
 
         if (bid < atomic_get_uint64_t(&sb->bmp_size) &&
@@ -1213,6 +1278,15 @@ bool sb_bmp_is_writable(struct filemgr *file, bid_t bid)
         }
     }
 
+    if ((ret == false) && (debug == true) && (dump == false) ){
+        dump = true;
+        fprintf(stderr, "sb_bmp_is_writable: Dumping debug info for %s\n", file->filename);
+        sb_dump(file, last_commit, lw_bmp_revnum);
+        goto dumpOut;
+    }
+    if (dump == true){
+        fprintf(stderr, "\n\n");
+    }
     sb_bmp_barrier_off(sb);
 
     return ret;
@@ -1597,6 +1671,7 @@ void _sb_init(struct superblock *sb, struct sb_config sconfig)
     avl_init(&sb->bmp_idx, NULL);
     spin_init(&sb->lock);
 }
+
 
 INLINE void _sb_copy(struct superblock *dst, struct superblock *src)
 {
