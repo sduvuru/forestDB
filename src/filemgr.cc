@@ -400,7 +400,7 @@ int filemgr_is_writable(struct filemgr *file, bid_t bid)
 {
     if (sb_bmp_exists(file->sb) && sb_ops.is_writable) {
         // block reusing is enabled
-        return sb_ops.is_writable(file, bid);
+        return sb_ops.is_writable(file, bid, false);
     } else {
         uint64_t pos = bid * file->blocksize;
         // Note that we don't need to grab file->lock here because
@@ -2238,7 +2238,7 @@ fdb_status filemgr_write_offset(struct filemgr *file, bid_t bid,
 
     if (sb_bmp_exists(file->sb)) {
         // block reusing is enabled
-        if (!sb_ops.is_writable(file, bid)) {
+        if (!sb_ops.is_writable(file, bid, true)) {
             const char *msg = "Write error: trying to write at the offset %" _F64 " that is "
                               "not identified as a reusable block in "
                               "a database file '%s'\n";
