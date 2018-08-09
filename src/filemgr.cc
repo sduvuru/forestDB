@@ -2572,6 +2572,13 @@ fdb_status filemgr_commit_bid(struct filemgr *file, bid_t bid,
                               filemgr_get_sb_bmp_revnum(file));
     } else {
         atomic_store_uint64_t(&file->last_commit, atomic_get_uint64_t(&file->pos));
+        fprintf(stderr, "filemgr_commit_bid: setting last_commit to file end %" _F64 " for %s\n", atomic_get_uint64_t(&file->last_commit), file->filename);
+        if (sb_bmp_exists(file->sb))
+            fprintf(stderr,"filemgr_commit_bid: sb_bmp exists\n");
+        if (atomic_get_uint64_t(&file->sb->cur_alloc_bid) != BLK_NOT_FOUND)
+            fprintf(stderr, "filemgr_commit_bid: cur alloc block set \n");
+        if (atomic_get_uint8_t(&file->status) == FILE_NORMAL)
+            fprintf(stderr, "filemgr_commit_bid: file status normal \n");
     }
     spin_unlock(&file->lock);
 

@@ -592,21 +592,25 @@ sb_decision_t sb_check_block_reusing(fdb_kvs_handle *handle)
     if (ratio > block_reusing_threshold) {
         if (!sb_bmp_exists(sb)) {
             // block reusing has not been started yet
+            fprintf(stderr, "sb_check_block_reusing: reclaim %s \n", handle->file->filename);
             return SBD_RECLAIM;
         } else {
             // stale blocks are already being reused before
             if (sb->num_free_blocks == 0) {
                 if (sb->rsv_bmp) {
                     // reserved bitmap exists
+                    fprintf(stderr, "sb_check_block_reusing: switch %s \n", handle->file->filename);
                     return SBD_SWITCH;
                 } else {
                     // re-reclaim
+                    fprintf(stderr, "sb_check_block_reusing: reclaim-2 %s \n", handle->file->filename);
                     return SBD_RECLAIM;
                 }
             } else if ( (sb->num_free_blocks * 100 <
                          sb->num_init_free_blocks * SB_PRE_RECLAIM_RATIO)) {
                 if (sb->num_init_free_blocks * handle->file->config->blocksize >
                     SB_MIN_BLOCK_REUSING_FILESIZE)  {
+                    fprintf(stderr, "sb_check_block_reusing: reserve %s \n", handle->file->filename);
                     return SBD_RESERVE;
                 }
             }
@@ -669,9 +673,11 @@ bool sb_reclaim_reusable_blocks(fdb_kvs_handle *handle)
     sb->min_live_hdr_revnum = sheader.revnum;
     sb->min_live_hdr_bid = sheader.bid;
     atomic_incr_uint64_t(&sb->bmp_revnum);
+    fprintf(stderr, "sb_reclaim_next_reusable_blocks: bmp_rev_number %llx \n", atomic_get_uint64_t(&sb->bmp_revnum) );
     sb->num_init_free_blocks = sb->num_free_blocks;
     sb_bmp_change_end(sb);
     free(old_bmp);
+
 
     return true;
 }
@@ -729,6 +735,7 @@ bool sb_reserve_next_reusable_blocks(fdb_kvs_handle *handle)
         rsv->min_live_hdr_bid = sheader.bid;
         rsv->bmp_revnum = atomic_get_uint64_t(&sb->bmp_revnum)+1;
         sb->rsv_bmp = rsv;
+        fprintf(stderr, "sb_reserve_next_reusable_blocks: rsv bmp_rev_number %llx \n", rsv->bmp_revnum );
     }
 
     return true;
@@ -1000,7 +1007,8 @@ bool sb_switch_reserved_blocks(struct filemgr *file)
     free(sb->rsv_bmp);
     sb->rsv_bmp = NULL;
 
-    fprintf(stderr, "sb_switch_reserved_blocks called for file %s \n", file->filename);
+    fprintf(stderr, "sb_switch_reserved_blocks called for file %s last_commit %" _F64 "cur_alloc_bid %" _F64 "\n", file->filename, atomic_get_uint64_t(&file->last_commit),
+            atomic_get_uint64_t(&sb->cur_alloc_bid));
     return true;
 }
 
@@ -1022,6 +1030,7 @@ sb_alloc_start_over:
     if (sb->num_free_blocks == 0) {
         bool switched = false;
         if (sb->rsv_bmp) {
+            fprintf(stderr, "sb_alloc_block: switching to reserve-1 \n");
             switched = sb_switch_reserved_blocks(file);
         }
         if (switched) {
@@ -1038,6 +1047,7 @@ sb_alloc_start_over:
     if (sb->num_free_blocks == 0) {
         bool switched = false;
         if (sb->rsv_bmp) {
+            fprintf(stderr, "sb_alloc_block: switching to reserve-2 \n");
             switched = sb_switch_reserved_blocks(file);
         }
         if (!switched) {
